@@ -7,6 +7,10 @@ A high performance Go server for Metrolist, for the listen together feature.
 ## Locally
 
 ```bash
+# Clone the repository
+git clone https://github.com/nyxiereal/metroserver
+cd metroserver
+
 # Install dependencies
 go mod download
 
@@ -23,6 +27,10 @@ PORT=9000 ./main
 ## Docker
 
 ```bash
+# Clone the repository
+git clone https://github.com/nyxiereal/metroserver
+cd metroserver
+
 # Build locally
 docker build -t metroserver:latest .
 
@@ -47,7 +55,7 @@ docker run -d \
 ---
 services:
   metroserver:
-    image: ghcr.io/nyxiereal/metrolist/metroserver:latest
+    image: ghcr.io/nyxiereal/metroserver:latest
     ports:
       - "8080:8080"
     environment:

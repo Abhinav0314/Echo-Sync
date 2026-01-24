@@ -270,6 +270,7 @@ type Client struct {
 	Conn         *websocket.Conn
 	Room         *Room
 	Send         chan []byte
+	closed       bool
 	mu           sync.Mutex
 }
 
@@ -490,14 +491,10 @@ func (s *Server) removeClient(c *Client) {
 		s.handleClientDisconnect(c)
 	}
 
-	// Check if send channel is still open before closing
+	// Mark client as closed and close the channel
 	c.mu.Lock()
-	select {
-	case _, ok := <-c.Send:
-		if ok {
-			close(c.Send)
-		}
-	default:
+	if !c.closed {
+		c.closed = true
 		close(c.Send)
 	}
 	c.mu.Unlock()
@@ -1565,6 +1562,11 @@ func (c *Client) sendMessage(logger *zap.Logger, msgType string, payload interfa
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.closed {
+		logger.Debug("Attempted to send to closed client", zap.String("client_id", c.ID))
+		return
+	}
 
 	select {
 	case c.Send <- msgData:
