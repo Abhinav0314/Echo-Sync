@@ -16,39 +16,45 @@ import (
 // Message types
 const (
 	// Client -> Server
-	MsgTypeCreateRoom     = "create_room"
-	MsgTypeJoinRoom       = "join_room"
-	MsgTypeLeaveRoom      = "leave_room"
-	MsgTypeApproveJoin    = "approve_join"
-	MsgTypeRejectJoin     = "reject_join"
-	MsgTypePlaybackAction = "playback_action"
-	MsgTypeBufferReady    = "buffer_ready"
-	MsgTypeKickUser       = "kick_user"
-	MsgTypePing           = "ping"
-	MsgTypeChat           = "chat"
-	MsgTypeRequestSync    = "request_sync"
-	MsgTypeReconnect      = "reconnect"
+	MsgTypeCreateRoom        = "create_room"
+	MsgTypeJoinRoom          = "join_room"
+	MsgTypeLeaveRoom         = "leave_room"
+	MsgTypeApproveJoin       = "approve_join"
+	MsgTypeRejectJoin        = "reject_join"
+	MsgTypePlaybackAction    = "playback_action"
+	MsgTypeBufferReady       = "buffer_ready"
+	MsgTypeKickUser          = "kick_user"
+	MsgTypePing              = "ping"
+	MsgTypeChat              = "chat"
+	MsgTypeRequestSync       = "request_sync"
+	MsgTypeReconnect         = "reconnect"
+	MsgTypeSuggestTrack      = "suggest_track"
+	MsgTypeApproveSuggestion = "approve_suggestion"
+	MsgTypeRejectSuggestion  = "reject_suggestion"
 
 	// Server -> Client
-	MsgTypeRoomCreated      = "room_created"
-	MsgTypeJoinRequest      = "join_request"
-	MsgTypeJoinApproved     = "join_approved"
-	MsgTypeJoinRejected     = "join_rejected"
-	MsgTypeUserJoined       = "user_joined"
-	MsgTypeUserLeft         = "user_left"
-	MsgTypeSyncPlayback     = "sync_playback"
-	MsgTypeBufferWait       = "buffer_wait"
-	MsgTypeBufferComplete   = "buffer_complete"
-	MsgTypeError            = "error"
-	MsgTypePong             = "pong"
-	MsgTypeRoomState        = "room_state"
-	MsgTypeChatMessage      = "chat_message"
-	MsgTypeHostChanged      = "host_changed"
-	MsgTypeKicked           = "kicked"
-	MsgTypeSyncState        = "sync_state"
-	MsgTypeReconnected      = "reconnected"
-	MsgTypeUserReconnected  = "user_reconnected"
-	MsgTypeUserDisconnected = "user_disconnected"
+	MsgTypeRoomCreated        = "room_created"
+	MsgTypeJoinRequest        = "join_request"
+	MsgTypeJoinApproved       = "join_approved"
+	MsgTypeJoinRejected       = "join_rejected"
+	MsgTypeUserJoined         = "user_joined"
+	MsgTypeUserLeft           = "user_left"
+	MsgTypeSyncPlayback       = "sync_playback"
+	MsgTypeBufferWait         = "buffer_wait"
+	MsgTypeBufferComplete     = "buffer_complete"
+	MsgTypeError              = "error"
+	MsgTypePong               = "pong"
+	MsgTypeRoomState          = "room_state"
+	MsgTypeChatMessage        = "chat_message"
+	MsgTypeHostChanged        = "host_changed"
+	MsgTypeKicked             = "kicked"
+	MsgTypeSyncState          = "sync_state"
+	MsgTypeReconnected        = "reconnected"
+	MsgTypeUserReconnected    = "user_reconnected"
+	MsgTypeUserDisconnected   = "user_disconnected"
+	MsgTypeSuggestionReceived = "suggestion_received"
+	MsgTypeSuggestionApproved = "suggestion_approved"
+	MsgTypeSuggestionRejected = "suggestion_rejected"
 )
 
 // Playback actions
@@ -132,10 +138,42 @@ type UserLeftPayload struct {
 
 // PlaybackActionPayload is for playback control actions
 type PlaybackActionPayload struct {
-	Action    string     `json:"action"`
-	TrackID   string     `json:"track_id,omitempty"`
-	Position  int64      `json:"position,omitempty"` // milliseconds
-	TrackInfo *TrackInfo `json:"track_info,omitempty"`
+	Action     string     `json:"action"`
+	TrackID    string     `json:"track_id,omitempty"`
+	Position   int64      `json:"position,omitempty"` // milliseconds
+	TrackInfo  *TrackInfo `json:"track_info,omitempty"`
+	InsertNext bool       `json:"insert_next,omitempty"`
+}
+
+// Suggestion payloads
+type SuggestTrackPayload struct {
+	TrackInfo *TrackInfo `json:"track_info"`
+}
+
+type SuggestionReceivedPayload struct {
+	SuggestionID string     `json:"suggestion_id"`
+	FromUserID   string     `json:"from_user_id"`
+	FromUsername string     `json:"from_username"`
+	TrackInfo    *TrackInfo `json:"track_info"`
+}
+
+type ApproveSuggestionPayload struct {
+	SuggestionID string `json:"suggestion_id"`
+}
+
+type RejectSuggestionPayload struct {
+	SuggestionID string `json:"suggestion_id"`
+	Reason       string `json:"reason,omitempty"`
+}
+
+type SuggestionApprovedPayload struct {
+	SuggestionID string     `json:"suggestion_id"`
+	TrackInfo    *TrackInfo `json:"track_info"`
+}
+
+type SuggestionRejectedPayload struct {
+	SuggestionID string `json:"suggestion_id"`
+	Reason       string `json:"reason,omitempty"`
 }
 
 // TrackInfo contains information about a track
@@ -279,13 +317,22 @@ type Room struct {
 	Code               string
 	Host               *Client
 	Clients            map[string]*Client
-	PendingJoins       map[string]*Client  // Users waiting for approval
-	DisconnectedUsers  map[string]*Session // Users temporarily disconnected
+	PendingJoins       map[string]*Client     // Users waiting for approval
+	PendingSuggestions map[string]*Suggestion // Track suggestions waiting for host action
+	DisconnectedUsers  map[string]*Session    // Users temporarily disconnected
 	State              *RoomState
 	BufferingUsers     map[string]bool // Track which users are still buffering
 	HostStartPosition  int64           // Host's position when buffering started
 	HostDisconnectedAt *time.Time      // When the host disconnected (nil if connected)
 	mu                 sync.RWMutex
+}
+
+// Suggestion represents a track suggestion from a guest
+type Suggestion struct {
+	ID           string
+	FromUserID   string
+	FromUsername string
+	Track        *TrackInfo
 }
 
 // Server is the main WebSocket server
@@ -744,9 +791,178 @@ func (s *Server) handleMessage(c *Client, data []byte) {
 		s.handleRequestSync(c)
 	case MsgTypeReconnect:
 		s.handleReconnect(c, msg.Payload)
+	case MsgTypeSuggestTrack:
+		s.handleSuggestTrack(c, msg.Payload)
+	case MsgTypeApproveSuggestion:
+		s.handleApproveSuggestion(c, msg.Payload)
+	case MsgTypeRejectSuggestion:
+		s.handleRejectSuggestion(c, msg.Payload)
 	default:
 		c.sendError(s.logger, "unknown_message_type", fmt.Sprintf("Unknown message type: %s", msg.Type))
 	}
+}
+
+func (s *Server) handleSuggestTrack(c *Client, payload json.RawMessage) {
+	var p SuggestTrackPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		c.sendError(s.logger, "invalid_payload", "Invalid suggest track payload")
+		return
+	}
+
+	if c.Room == nil {
+		c.sendError(s.logger, "not_in_room", "You are not in a room")
+		return
+	}
+	if p.TrackInfo == nil || p.TrackInfo.ID == "" || p.TrackInfo.Title == "" {
+		c.sendError(s.logger, "invalid_track_info", "Track must have ID and title")
+		return
+	}
+
+	room := c.Room
+	room.mu.Lock()
+	defer room.mu.Unlock()
+
+	// Host cannot suggest to themselves; ignore silently
+	if room.Host != nil && room.Host.ID == c.ID {
+		return
+	}
+
+	if room.PendingSuggestions == nil {
+		room.PendingSuggestions = make(map[string]*Suggestion)
+	}
+
+	// Generate suggestion ID
+	sugID := fmt.Sprintf("sug_%d_%d", time.Now().UnixNano(), s.rng.Intn(10000))
+	room.PendingSuggestions[sugID] = &Suggestion{
+		ID:           sugID,
+		FromUserID:   c.ID,
+		FromUsername: c.Username,
+		Track:        p.TrackInfo,
+	}
+
+	// Notify host
+	if room.Host != nil {
+		room.Host.sendMessage(s.logger, MsgTypeSuggestionReceived, SuggestionReceivedPayload{
+			SuggestionID: sugID,
+			FromUserID:   c.ID,
+			FromUsername: c.Username,
+			TrackInfo:    p.TrackInfo,
+		})
+	}
+
+	s.logger.Info("Suggestion received",
+		zap.String("room_code", room.Code),
+		zap.String("from_user", c.Username),
+		zap.String("track_id", p.TrackInfo.ID))
+}
+
+func (s *Server) handleApproveSuggestion(c *Client, payload json.RawMessage) {
+	var p ApproveSuggestionPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		c.sendError(s.logger, "invalid_payload", "Invalid approve suggestion payload")
+		return
+	}
+	if p.SuggestionID == "" {
+		c.sendError(s.logger, "missing_suggestion_id", "Suggestion ID is required")
+		return
+	}
+	if c.Room == nil {
+		c.sendError(s.logger, "not_in_room", "You are not in a room")
+		return
+	}
+	room := c.Room
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	if room.Host == nil || room.Host != c {
+		c.sendError(s.logger, "not_host", "Only the host can approve suggestions")
+		return
+	}
+	suggestion, exists := room.PendingSuggestions[p.SuggestionID]
+	if !exists || suggestion == nil {
+		c.sendError(s.logger, "suggestion_not_found", "Suggestion not found")
+		return
+	}
+
+	// Remove from pending
+	delete(room.PendingSuggestions, p.SuggestionID)
+
+	// Update room state queue: insert next (front of upcoming queue)
+	if suggestion.Track != nil {
+		if len(room.State.Queue) >= 1000 {
+			c.sendError(s.logger, "queue_full", "Queue is full")
+			return
+		}
+		room.State.Queue = append([]TrackInfo{*suggestion.Track}, room.State.Queue...)
+	}
+
+	// Broadcast queue add (insert next) so clients apply immediately
+	qa := PlaybackActionPayload{
+		Action:     ActionQueueAdd,
+		TrackInfo:  suggestion.Track,
+		InsertNext: true,
+	}
+	for _, client := range room.Clients {
+		if client != nil {
+			client.sendMessage(s.logger, MsgTypeSyncPlayback, qa)
+		}
+	}
+
+	// Notify suggester of approval
+	if target, ok := room.Clients[suggestion.FromUserID]; ok && target != nil {
+		target.sendMessage(s.logger, MsgTypeSuggestionApproved, SuggestionApprovedPayload{
+			SuggestionID: p.SuggestionID,
+			TrackInfo:    suggestion.Track,
+		})
+	}
+
+	s.logger.Info("Suggestion approved",
+		zap.String("room_code", room.Code),
+		zap.String("track_id", suggestion.Track.ID))
+}
+
+func (s *Server) handleRejectSuggestion(c *Client, payload json.RawMessage) {
+	var p RejectSuggestionPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		c.sendError(s.logger, "invalid_payload", "Invalid reject suggestion payload")
+		return
+	}
+	if p.SuggestionID == "" {
+		c.sendError(s.logger, "missing_suggestion_id", "Suggestion ID is required")
+		return
+	}
+	if c.Room == nil {
+		c.sendError(s.logger, "not_in_room", "You are not in a room")
+		return
+	}
+	room := c.Room
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	if room.Host == nil || room.Host != c {
+		c.sendError(s.logger, "not_host", "Only the host can reject suggestions")
+		return
+	}
+	suggestion, exists := room.PendingSuggestions[p.SuggestionID]
+	if !exists || suggestion == nil {
+		c.sendError(s.logger, "suggestion_not_found", "Suggestion not found")
+		return
+	}
+	delete(room.PendingSuggestions, p.SuggestionID)
+
+	// Notify suggester of rejection
+	reason := p.Reason
+	if len(reason) > 200 {
+		reason = reason[:200]
+	}
+	if target, ok := room.Clients[suggestion.FromUserID]; ok && target != nil {
+		target.sendMessage(s.logger, MsgTypeSuggestionRejected, SuggestionRejectedPayload{
+			SuggestionID: p.SuggestionID,
+			Reason:       reason,
+		})
+	}
+
+	s.logger.Info("Suggestion rejected",
+		zap.String("room_code", room.Code),
+		zap.String("track_id", suggestion.Track.ID))
 }
 
 func (s *Server) handleCreateRoom(c *Client, payload json.RawMessage) {
@@ -1163,7 +1379,13 @@ func (s *Server) handlePlaybackAction(c *Client, payload json.RawMessage) {
 			return
 		}
 
-		room.State.Queue = append(room.State.Queue, *p.TrackInfo)
+		if p.InsertNext {
+			// Insert right after current track: at the front of upcoming queue
+			room.State.Queue = append([]TrackInfo{*p.TrackInfo}, room.State.Queue...)
+		} else {
+			// Append to end of upcoming queue
+			room.State.Queue = append(room.State.Queue, *p.TrackInfo)
+		}
 
 	case ActionQueueRemove:
 		if p.TrackID == "" {
