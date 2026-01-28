@@ -147,6 +147,7 @@ type PlaybackActionPayload struct {
 	TrackInfo  *TrackInfo  `json:"track_info,omitempty"`
 	InsertNext bool        `json:"insert_next,omitempty"`
 	Queue      []TrackInfo `json:"queue,omitempty"`
+	QueueTitle string      `json:"queue_title,omitempty"`
 }
 
 // Suggestion payloads
