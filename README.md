@@ -1,17 +1,22 @@
 # Metroserver
 
-A high performance Go server for Metrolist, for the listen together feature.
+A high performance Go WebSocket server for Metrolist's "Listen Together" feature.  
+Utilizes protobuf and gzip compression for fast and efficient communication between clients.
 
 # Quickstart
 
 ## Locally
+You need to install go, protobuf, and protoc-gen-go
 
 ```bash
-# Clone the repository
 git clone https://github.com/nyxiereal/metroserver
 cd metroserver
 
-# Install dependencies
+# Generate protobuf files (required first time)
+chmod +x generate_proto.sh
+./generate_proto.sh
+
+# Download dependencies
 go mod download
 
 # Build the server

@@ -2,7 +2,7 @@
 FROM golang:1.25.6-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git
+RUN apk add --no-cache git protobuf-dev bash
 
 # Set working directory
 WORKDIR /build
@@ -10,11 +10,18 @@ WORKDIR /build
 # Copy go mod files
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Download Go protobuf plugins
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
+    go mod download
+
+# Ensure protoc-gen-go is on PATH
+ENV PATH="/root/go/bin:${PATH}"
 
 # Copy source code
 COPY . .
+
+# Generate protobuf files from submodule
+RUN bash generate_proto.sh
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main -ldflags="-w -s" .

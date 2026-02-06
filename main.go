@@ -315,6 +315,7 @@ type Client struct {
 	closed       bool
 	mu           sync.Mutex
 	rateLimiter  *RateLimiter
+	codec        *MessageCodec // Message codec for encoding/decoding
 }
 
 // Room represents a listening room
@@ -479,11 +480,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Default to JSON for backward compatibility (DEPRECATED)
+	// Will auto-upgrade to protobuf when client sends protobuf messages
 	client := &Client{
 		ID:          s.generateUserID(),
 		Conn:        conn,
 		Send:        make(chan []byte, 256),
 		rateLimiter: &RateLimiter{messages: make([]time.Time, 0)},
+		codec:       NewMessageCodec(FormatJSON, false),
 	}
 
 	s.mu.Lock()
@@ -665,9 +669,9 @@ func (s *Server) handleClientDisconnect(c *Client) {
 }
 
 // handleReconnect handles a client trying to reconnect to their room
-func (s *Server) handleReconnect(c *Client, payload json.RawMessage) {
+func (s *Server) handleReconnect(c *Client, payload []byte, format MessageFormat) {
 	var p ReconnectPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeReconnect, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid reconnect payload")
 		return
 	}
@@ -815,57 +819,66 @@ func sanitizeString(s string, maxLen int) string {
 }
 
 func (s *Server) handleMessage(c *Client, data []byte) {
-	var msg Message
-	if err := json.Unmarshal(data, &msg); err != nil {
+	// Auto-detect message format and upgrade codec if needed
+	format := detectMessageFormat(data)
+	if format == FormatProtobuf && c.codec.format == FormatJSON {
+		// Upgrade client to protobuf with compression
+		c.codec = NewMessageCodec(FormatProtobuf, true)
+		s.logger.Info("Client upgraded to protobuf", zap.String("client_id", c.ID))
+	}
+
+	// Decode message using codec
+	msgType, payloadBytes, err := c.codec.Decode(data)
+	if err != nil {
 		s.logger.Debug("Invalid message received", zap.String("client_id", c.ID), zap.Error(err))
 		c.sendError(s.logger, "invalid_message", "Invalid message format")
 		return
 	}
 
-	if msg.Type == "" {
+	if msgType == "" {
 		c.sendError(s.logger, "invalid_message", "Message type is required")
 		return
 	}
 
-	s.logger.Debug("Message received", zap.String("client_id", c.ID), zap.String("message_type", msg.Type))
+	s.logger.Debug("Message received", zap.String("client_id", c.ID), zap.String("message_type", msgType), zap.String("format", formatToString(format)))
 
-	switch msg.Type {
+	switch msgType {
 	case MsgTypeCreateRoom:
-		s.handleCreateRoom(c, msg.Payload)
+		s.handleCreateRoom(c, payloadBytes, format)
 	case MsgTypeJoinRoom:
-		s.handleJoinRoom(c, msg.Payload)
+		s.handleJoinRoom(c, payloadBytes, format)
 	case MsgTypeLeaveRoom:
 		s.leaveRoom(c)
 	case MsgTypeApproveJoin:
-		s.handleApproveJoin(c, msg.Payload)
+		s.handleApproveJoin(c, payloadBytes, format)
 	case MsgTypeRejectJoin:
-		s.handleRejectJoin(c, msg.Payload)
+		s.handleRejectJoin(c, payloadBytes, format)
 	case MsgTypePlaybackAction:
-		s.handlePlaybackAction(c, msg.Payload)
+		s.handlePlaybackAction(c, payloadBytes, format)
 	case MsgTypeBufferReady:
-		s.handleBufferReady(c, msg.Payload)
+		s.handleBufferReady(c, payloadBytes, format)
 	case MsgTypeKickUser:
-		s.handleKickUser(c, msg.Payload)
+		s.handleKickUser(c, payloadBytes, format)
 	case MsgTypePing:
 		c.sendMessage(s.logger, MsgTypePong, nil)
 	case MsgTypeRequestSync:
 		s.handleRequestSync(c)
 	case MsgTypeReconnect:
-		s.handleReconnect(c, msg.Payload)
+		s.handleReconnect(c, payloadBytes, format)
 	case MsgTypeSuggestTrack:
-		s.handleSuggestTrack(c, msg.Payload)
+		s.handleSuggestTrack(c, payloadBytes, format)
 	case MsgTypeApproveSuggestion:
-		s.handleApproveSuggestion(c, msg.Payload)
+		s.handleApproveSuggestion(c, payloadBytes, format)
 	case MsgTypeRejectSuggestion:
-		s.handleRejectSuggestion(c, msg.Payload)
+		s.handleRejectSuggestion(c, payloadBytes, format)
 	default:
-		c.sendError(s.logger, "unknown_message_type", fmt.Sprintf("Unknown message type: %s", msg.Type))
+		c.sendError(s.logger, "unknown_message_type", fmt.Sprintf("Unknown message type: %s", msgType))
 	}
 }
 
-func (s *Server) handleSuggestTrack(c *Client, payload json.RawMessage) {
+func (s *Server) handleSuggestTrack(c *Client, payload []byte, format MessageFormat) {
 	var p SuggestTrackPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeSuggestTrack, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid suggest track payload")
 		return
 	}
@@ -929,9 +942,9 @@ func (s *Server) handleSuggestTrack(c *Client, payload json.RawMessage) {
 		zap.String("track_id", p.TrackInfo.ID))
 }
 
-func (s *Server) handleApproveSuggestion(c *Client, payload json.RawMessage) {
+func (s *Server) handleApproveSuggestion(c *Client, payload []byte, format MessageFormat) {
 	var p ApproveSuggestionPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeApproveSuggestion, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid approve suggestion payload")
 		return
 	}
@@ -994,9 +1007,9 @@ func (s *Server) handleApproveSuggestion(c *Client, payload json.RawMessage) {
 		zap.String("track_id", suggestion.Track.ID))
 }
 
-func (s *Server) handleRejectSuggestion(c *Client, payload json.RawMessage) {
+func (s *Server) handleRejectSuggestion(c *Client, payload []byte, format MessageFormat) {
 	var p RejectSuggestionPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeRejectSuggestion, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid reject suggestion payload")
 		return
 	}
@@ -1039,9 +1052,9 @@ func (s *Server) handleRejectSuggestion(c *Client, payload json.RawMessage) {
 		zap.String("track_id", suggestion.Track.ID))
 }
 
-func (s *Server) handleCreateRoom(c *Client, payload json.RawMessage) {
+func (s *Server) handleCreateRoom(c *Client, payload []byte, format MessageFormat) {
 	var p CreateRoomPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeCreateRoom, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid create room payload")
 		return
 	}
@@ -1118,9 +1131,9 @@ func (s *Server) handleCreateRoom(c *Client, payload json.RawMessage) {
 		zap.String("host_id", c.ID))
 }
 
-func (s *Server) handleJoinRoom(c *Client, payload json.RawMessage) {
+func (s *Server) handleJoinRoom(c *Client, payload []byte, format MessageFormat) {
 	var p JoinRoomPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeJoinRoom, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid join room payload")
 		return
 	}
@@ -1199,9 +1212,9 @@ func (s *Server) handleJoinRoom(c *Client, payload json.RawMessage) {
 		zap.String("room_code", p.RoomCode))
 }
 
-func (s *Server) handleApproveJoin(c *Client, payload json.RawMessage) {
+func (s *Server) handleApproveJoin(c *Client, payload []byte, format MessageFormat) {
 	var p ApproveJoinPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeApproveJoin, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid approve join payload")
 		return
 	}
@@ -1291,9 +1304,9 @@ func (s *Server) handleApproveJoin(c *Client, payload json.RawMessage) {
 		zap.String("room_code", room.Code))
 }
 
-func (s *Server) handleRejectJoin(c *Client, payload json.RawMessage) {
+func (s *Server) handleRejectJoin(c *Client, payload []byte, format MessageFormat) {
 	var p RejectJoinPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeRejectJoin, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid reject join payload")
 		return
 	}
@@ -1344,9 +1357,9 @@ func (s *Server) handleRejectJoin(c *Client, payload json.RawMessage) {
 		zap.String("room_code", room.Code))
 }
 
-func (s *Server) handlePlaybackAction(c *Client, payload json.RawMessage) {
+func (s *Server) handlePlaybackAction(c *Client, payload []byte, format MessageFormat) {
 	var p PlaybackActionPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypePlaybackAction, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid playback action payload")
 		return
 	}
@@ -1580,9 +1593,9 @@ func (s *Server) handlePlaybackAction(c *Client, payload json.RawMessage) {
 		zap.String("host_name", c.Username))
 }
 
-func (s *Server) handleBufferReady(c *Client, payload json.RawMessage) {
+func (s *Server) handleBufferReady(c *Client, payload []byte, format MessageFormat) {
 	var p BufferReadyPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeBufferReady, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid buffer ready payload")
 		return
 	}
@@ -1678,9 +1691,9 @@ func (s *Server) handleBufferReady(c *Client, payload json.RawMessage) {
 	}
 }
 
-func (s *Server) handleKickUser(c *Client, payload json.RawMessage) {
+func (s *Server) handleKickUser(c *Client, payload []byte, format MessageFormat) {
 	var p KickUserPayload
-	if err := json.Unmarshal(payload, &p); err != nil {
+	if err := decodePayload(payload, format, MsgTypeKickUser, &p); err != nil {
 		c.sendError(s.logger, "invalid_payload", "Invalid kick user payload")
 		return
 	}
@@ -1904,20 +1917,10 @@ func (s *Server) leaveRoom(c *Client) {
 }
 
 func (c *Client) sendMessage(logger *zap.Logger, msgType string, payload interface{}) {
-	data, err := json.Marshal(payload)
+	// Use the client's codec to encode the message
+	msgData, err := c.codec.Encode(msgType, payload)
 	if err != nil {
-		logger.Debug("Error marshaling payload", zap.String("message_type", msgType), zap.Error(err))
-		return
-	}
-
-	msg := Message{
-		Type:    msgType,
-		Payload: data,
-	}
-
-	msgData, err := json.Marshal(msg)
-	if err != nil {
-		logger.Debug("Error marshaling message", zap.String("message_type", msgType), zap.Error(err))
+		logger.Debug("Error encoding message", zap.String("message_type", msgType), zap.Error(err))
 		return
 	}
 
