@@ -9,7 +9,7 @@ Utilizes protobuf and gzip compression for fast and efficient communication betw
 You need to install go, protobuf, and protoc-gen-go
 
 ```bash
-git clone https://github.com/nyxiereal/metroserver
+git clone https://github.com/MetrolistGroup/metroserver
 cd metroserver
 
 # Generate protobuf files (required first time)
@@ -33,11 +33,11 @@ PORT=9000 ./main
 
 ```bash
 # Clone the repository
-git clone https://github.com/nyxiereal/metroserver
+git clone https://github.com/MetrolistGroup/metroserver
 cd metroserver
 
 # Build locally
-docker build -t metroserver:latest .
+docker build -t MetrolistGroup:latest .
 
 # Run on port 8080
 docker run -d \
@@ -60,7 +60,7 @@ docker run -d \
 ---
 services:
   metroserver:
-    image: ghcr.io/nyxiereal/metroserver:latest
+    image: ghcr.io/MetrolistGroup/metroserver:latest
     ports:
       - "8080:8080"
     environment:

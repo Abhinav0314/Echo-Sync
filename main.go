@@ -475,7 +475,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Warn("WebSocket upgrade error", zap.Error(err))
-		s.mu.Unlock()
 		return
 	}
 

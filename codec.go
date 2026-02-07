@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	pb "github.com/nyxiereal/metroserver/proto"
+	pb "github.com/MetrolistGroup/metroserver/proto"
 	"google.golang.org/protobuf/proto"
 )
 
