@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	mathrand "math/rand"
+	"math/big"
 	"net/http"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 )
 
 type Session struct {
+	AccountID string
 	UserID       string
 	Username     string
 	RoomCode     string
@@ -22,6 +24,9 @@ type Session struct {
 }
 
 type Room struct {
+	Password *roomPassword
+	AutoJoin bool
+	BannedAccounts map[string]bool
 	Code               string
 	Host               *Client
 	Clients            map[string]*Client
@@ -47,6 +52,11 @@ type Suggestion struct {
 
 // Server is the main WebSocket server
 type Server struct {
+	authenticate authenticateAccount
+	authSlots chan struct{}
+	passwordSlots chan struct{}
+	authLimiter requestLimiter
+	roomLimiter requestLimiter
 	rooms           map[string]*Room
 	sessions        map[string]*Session // sessionToken -> Session
 	clients         map[*Client]bool
@@ -83,8 +93,8 @@ const (
 	MaxPendingJoins       = 100
 	MaxPendingSuggestions = 100
 	// Connection limits
-	MaxClients           = 10000
-	MaxRooms             = 10000
+	MaxClients           = 512
+	MaxRooms             = 128
 	MaxClientsPerRoom    = 100
 	MaxReadMessageSize   = 524288 // 512KB (reasonable for queue syncs)
 	MaxHeaderBytes       = 65536
@@ -100,12 +110,15 @@ const (
 
 func NewServer(logger *zap.Logger) *Server {
 	s := &Server{
+		authSlots: make(chan struct{}, 16),
+		passwordSlots: make(chan struct{}, 2),
 		rooms:    make(map[string]*Room),
 		sessions: make(map[string]*Session),
 		clients:  make(map[*Client]bool),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				return true
+				origin := r.Header.Get("Origin")
+				return origin == "" || origin == "https://echo.vibescape.club"
 			},
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
@@ -127,11 +140,11 @@ func NewServer(logger *zap.Logger) *Server {
 func (s *Server) generateRoomCode() string {
 	const chars = "1234567890QWERTYUPASDFGHJLKZXCVBNM"
 	code := make([]byte, 8)
-	s.rngMu.Lock()
 	for i := range code {
-		code[i] = chars[s.rng.Intn(len(chars))]
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+		if err != nil { panic("secure random source unavailable") }
+		code[i] = chars[n.Int64()]
 	}
-	s.rngMu.Unlock()
 	return string(code)
 }
 
@@ -147,11 +160,7 @@ func (s *Server) generateSessionToken() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		s.logger.Error("Failed to generate secure token", zap.Error(err))
-		// Fallback to less secure but functional token
-		s.rngMu.Lock()
-		tokenNum := s.rng.Intn(1000000)
-		s.rngMu.Unlock()
-		return fmt.Sprintf("token_%d_%d", time.Now().UnixNano(), tokenNum)
+		panic("secure random source unavailable")
 	}
 	return hex.EncodeToString(b)
 }
@@ -175,6 +184,8 @@ func (s *Server) releaseConnectionSlot() {
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	identity, token, authorized := s.authorizeUpgrade(w, r)
+	if !authorized { return }
 	s.mu.RLock()
 	clientCount := len(s.clients)
 	s.mu.RUnlock()
@@ -201,12 +212,15 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Use Protobuf codec with compression enabled
 	client := newClient(s.generateUserID(), conn)
+	client.accountID = identity.ID
+	client.authExpiresAt = identity.ExpiresAt
 
 	userAgent := r.Header.Get("User-Agent")
 	tier := s.uaPolicy.resolve(userAgent)
 	if err := s.database.recordUserAgent(userAgent); err != nil {
 		s.logger.Warn("Failed to record User-Agent", zap.Error(err))
 	}
+	tier = uaAllow
 	client.uaTier = tier
 	client.policy = s.uaPolicy
 	if tier == uaBlock {
@@ -229,6 +243,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close()
 		return
 	}
+	accountConnections := 0
+	for other := range s.clients { if other.accountID == identity.ID { accountConnections++ } }
+	if accountConnections >= 4 { s.mu.Unlock(); _ = conn.Close(); return }
 	s.clients[client] = true
 	s.mu.Unlock()
 
@@ -236,11 +253,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	slotOwned = false
 	go client.writePump(s.logger)
 	go client.readPump(s)
+	go s.watchAccount(client, token, identity.ExpiresAt)
 
 	s.logger.Info("Client connected", zap.String("client_id", client.clientID()), zap.String("ua_tier", tier.String()))
 }
 
 func (s *Server) handleMessage(c *Client, data []byte) {
+	if s.authenticate != nil && (c.accountID == "" || !c.authExpiresAt.After(time.Now())) { c.sendError(s.logger, "auth_required", "Sign in to Echo again"); return }
 	// Decode message using protobuf codec
 	msgType, payloadBytes, err := c.codec.Decode(data)
 	if err != nil {

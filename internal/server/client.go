@@ -11,6 +11,8 @@ import (
 )
 
 type Client struct {
+	accountID string // Verified Auth subject; immutable for this connection.
+	authExpiresAt time.Time
 	id                 atomic.Value // string
 	username           atomic.Value // string
 	sessionToken       atomic.Value // string

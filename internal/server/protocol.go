@@ -61,6 +61,8 @@ const (
 // CreateRoomPayload is for creating a new room
 type CreateRoomPayload struct {
 	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
+	AutoJoin bool `json:"auto_join,omitempty"`
 }
 
 // RoomCreatedPayload is the response for room creation
@@ -74,6 +76,7 @@ type RoomCreatedPayload struct {
 type JoinRoomPayload struct {
 	RoomCode string `json:"room_code"`
 	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
 }
 
 // JoinRequestPayload is sent to the host when someone wants to join

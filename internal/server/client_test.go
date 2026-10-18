@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,11 +22,12 @@ func TestWebSocketHeartbeatHasPongBudget(t *testing.T) {
 
 func TestWebSocketPumpsRoundTripAndRemoveClient(t *testing.T) {
 	server := testServer()
+	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
 	httpServer := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	t.Cleanup(httpServer.Close)
 
 	url := "ws" + strings.TrimPrefix(httpServer.URL, "http")
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(url, http.Header{"Authorization": []string{"Bearer test-token"}})
 	if err != nil {
 		t.Fatal(err)
 	}
