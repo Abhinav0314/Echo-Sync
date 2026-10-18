@@ -238,7 +238,7 @@ func (s *Server) handleClientDisconnect(c *Client) {
 
 	// Create session for reconnection
 	session := &Session{
-		AccountID: c.accountID,
+		AccountID:    c.accountID,
 		UserID:       clientID,
 		Username:     username,
 		RoomCode:     room.Code,
@@ -325,8 +325,16 @@ func (s *Server) handleReconnect(c *Client, payload []byte) {
 	now := time.Now()
 	s.mu.Lock()
 	session, exists := s.sessions[p.SessionToken]
-	if exists && session != nil && session.AccountID != c.accountID { s.mu.Unlock(); c.sendError(s.logger, "session_not_found", "Session not found or expired"); return }
-	if s.authenticate != nil && exists && session != nil && session.AccountID == "" { s.mu.Unlock(); c.sendError(s.logger, "session_not_found", "Session not found or expired"); return }
+	if exists && session != nil && session.AccountID != c.accountID {
+		s.mu.Unlock()
+		c.sendError(s.logger, "session_not_found", "Session not found or expired")
+		return
+	}
+	if s.authenticate != nil && exists && session != nil && session.AccountID == "" {
+		s.mu.Unlock()
+		c.sendError(s.logger, "session_not_found", "Session not found or expired")
+		return
+	}
 	expired := exists && (session == nil || now.Sub(session.DisconnectAt) > ReconnectGracePeriod)
 	if exists && !expired && session.IsHost && !canHostClient(c) {
 		s.mu.Unlock()

@@ -29,8 +29,7 @@ jobs:
           bash scripts/generate_proto.sh
       - name: Validate and build
         run: |
-          gofmt -w internal/server
-          echo "ECHO_FORMAT_PATCH:$(git diff --binary -- internal/server | base64 -w0)"
+          test -z "$(gofmt -l internal/server)"
           go vet ./...
           go test -race -count=1 ./...
           go build ./cmd/metroserver

@@ -22,32 +22,50 @@ func TestSupabaseUsesVerifiedUserNotUntrustedClaims(t *testing.T) {
 	status := http.StatusOK
 	service := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.URL.Path != "/auth/v1/user" || r.Header.Get("apikey") != "public-key" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") { t.Error("wrong Auth request") }
+		if r.URL.Path != "/auth/v1/user" || r.Header.Get("apikey") != "public-key" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			t.Error("wrong Auth request")
+		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(response))
 	}))
 	defer service.Close()
 	authenticate, err := supabaseAuthenticatorWithClient(service.URL, "public-key", service.Client())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	valid := testJWT(service.URL+"/auth/v1", "owner", time.Now().Add(time.Hour).Unix(), "authenticated", "authenticated")
 	identity, err := authenticate(context.Background(), valid)
-	if err != nil || identity.ID != "owner" { t.Fatalf("valid account rejected: %v", err) }
+	if err != nil || identity.ID != "owner" {
+		t.Fatalf("valid account rejected: %v", err)
+	}
 	for _, token := range []string{
 		"not-a-jwt", testJWT("https://another-project/auth/v1", "owner", time.Now().Add(time.Hour).Unix(), "authenticated", "authenticated"),
 		testJWT(service.URL+"/auth/v1", "owner", time.Now().Add(-time.Second).Unix(), "authenticated", "authenticated"),
 		testJWT(service.URL+"/auth/v1", "owner", time.Now().Add(time.Hour).Unix(), "service_role", "authenticated"),
 		testJWT(service.URL+"/auth/v1", "owner", time.Now().Add(time.Hour).Unix(), "authenticated", "other"),
-	} { if _, err := authenticate(context.Background(), token); err == nil { t.Fatal("invalid claim set accepted") } }
-	if calls != 1 { t.Fatalf("invalid claims reached Auth: calls=%d", calls) }
+	} {
+		if _, err := authenticate(context.Background(), token); err == nil {
+			t.Fatal("invalid claim set accepted")
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("invalid claims reached Auth: calls=%d", calls)
+	}
 	for _, body := range []string{`{"id":"different-owner"}`, `{"id":"owner","is_anonymous":true}`, `{"id":"owner","banned_until":"2999-01-01T00:00:00Z"}`, `{`, strings.Repeat("x", 65537)} {
 		response = body
-		if _, err := authenticate(context.Background(), valid); err == nil { t.Fatal("unverified/anonymous account accepted") }
+		if _, err := authenticate(context.Background(), valid); err == nil {
+			t.Fatal("unverified/anonymous account accepted")
+		}
 	}
 	response = `{"id":"owner"}`
 	status = http.StatusUnauthorized
-	if _, err := authenticate(context.Background(), valid); err == nil { t.Fatal("forged or invalid signature accepted") }
+	if _, err := authenticate(context.Background(), valid); err == nil {
+		t.Fatal("forged or invalid signature accepted")
+	}
 	status = http.StatusTemporaryRedirect
-	if _, err := authenticate(context.Background(), valid); err == nil { t.Fatal("redirect accepted") }
+	if _, err := authenticate(context.Background(), valid); err == nil {
+		t.Fatal("redirect accepted")
+	}
 }
 
 func TestWebSocketFailsClosedWithoutAuthentication(t *testing.T) {
@@ -57,14 +75,20 @@ func TestWebSocketFailsClosedWithoutAuthentication(t *testing.T) {
 		r.Header.Set("Authorization", authorization)
 		w := httptest.NewRecorder()
 		s.handleWebSocket(w, r)
-		if w.Code != http.StatusServiceUnavailable { t.Fatal("unconfigured server accepted a connection") }
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatal("unconfigured server accepted a connection")
+		}
 	}
-	s.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "owner", ExpiresAt: time.Now().Add(-time.Second)}, nil }
+	s.authenticate = func(context.Context, string) (accountIdentity, error) {
+		return accountIdentity{ID: "owner", ExpiresAt: time.Now().Add(-time.Second)}, nil
+	}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Header.Set("Authorization", "Bearer expired")
 	s.handleWebSocket(w, r)
-	if w.Code != http.StatusUnauthorized { t.Fatal("expired account accepted") }
+	if w.Code != http.StatusUnauthorized {
+		t.Fatal("expired account accepted")
+	}
 }
 
 func TestRoomPasswordsCannotBeBypassedByAutoJoin(t *testing.T) {
@@ -73,20 +97,32 @@ func TestRoomPasswordsCannotBeBypassedByAutoJoin(t *testing.T) {
 	host.accountID = "host-account"
 	s.handleCreateRoom(host, encodeTestPayload(t, MsgTypeCreateRoom, &CreateRoomPayload{Username: "Host", Password: "correct horse", AutoJoin: true}))
 	room := host.currentRoom()
-	if room == nil || room.Password == nil { t.Fatal("password not set") }
-	if strings.Contains(string(room.Password.Hash), "correct horse") { t.Fatal("plaintext password retained") }
+	if room == nil || room.Password == nil {
+		t.Fatal("password not set")
+	}
+	if strings.Contains(string(room.Password.Hash), "correct horse") {
+		t.Fatal("plaintext password retained")
+	}
 	guest := newClient("guest", nil)
 	guest.accountID = "guest-account"
-	join := func(password string) { s.handleJoinRoom(guest, encodeTestPayload(t, MsgTypeJoinRoom, &JoinRoomPayload{RoomCode: room.Code, Username: "Guest", Password: password})) }
+	join := func(password string) {
+		s.handleJoinRoom(guest, encodeTestPayload(t, MsgTypeJoinRoom, &JoinRoomPayload{RoomCode: room.Code, Username: "Guest", Password: password}))
+	}
 	join("")
 	receiveRoomError(t, guest, "password_required")
 	join("wrong password")
 	receiveRoomError(t, guest, "password_incorrect")
-	if guest.currentRoom() != nil || guest.currentPendingRoom() != nil { t.Fatal("password failure created membership") }
+	if guest.currentRoom() != nil || guest.currentPendingRoom() != nil {
+		t.Fatal("password failure created membership")
+	}
 	join("correct horse")
-	if guest.currentRoom() != room || room.Clients["guest"] != guest { t.Fatal("valid password did not join") }
+	if guest.currentRoom() != room || room.Clients["guest"] != guest {
+		t.Fatal("valid password did not join")
+	}
 	encoded, err := json.Marshal(room.State)
-	if err != nil || strings.Contains(string(encoded), "password") || strings.Contains(string(encoded), "correct horse") { t.Fatal("private password leaked into room state") }
+	if err != nil || strings.Contains(string(encoded), "password") || strings.Contains(string(encoded), "correct horse") {
+		t.Fatal("private password leaked into room state")
+	}
 }
 
 func TestReconnectRequiresSameAccountAndDoesNotConsumeOthersToken(t *testing.T) {
@@ -100,11 +136,15 @@ func TestReconnectRequiresSameAccountAndDoesNotConsumeOthersToken(t *testing.T) 
 	thief.accountID = "another-account"
 	s.handleReconnect(thief, encodeTestPayload(t, MsgTypeReconnect, &ReconnectPayload{SessionToken: token}))
 	receiveRoomError(t, thief, "session_not_found")
-	if thief.currentRoom() != nil || s.sessions[token] == nil { t.Fatal("cross-account reconnect consumed or acquired session") }
+	if thief.currentRoom() != nil || s.sessions[token] == nil {
+		t.Fatal("cross-account reconnect consumed or acquired session")
+	}
 	owner := newClient("returning-owner", nil)
 	owner.accountID = "owner"
 	s.handleReconnect(owner, encodeTestPayload(t, MsgTypeReconnect, &ReconnectPayload{SessionToken: token}))
-	if owner.currentRoom() == nil || owner.currentRoom().Host != owner { t.Fatal("real owner could not reconnect") }
+	if owner.currentRoom() == nil || owner.currentRoom().Host != owner {
+		t.Fatal("real owner could not reconnect")
+	}
 }
 
 func TestAccountJoinBudgetSurvivesChangingConnections(t *testing.T) {
@@ -114,21 +154,25 @@ func TestAccountJoinBudgetSurvivesChangingConnections(t *testing.T) {
 		c.accountID = "same-account"
 		s.handleJoinRoom(c, encodeTestPayload(t, MsgTypeJoinRoom, &JoinRoomPayload{RoomCode: "NOEXISTS", Username: "Guest"}))
 		want := "room_not_found"
-		if i == 15 { want = "rate_limited" }
+		if i == 15 {
+			want = "rate_limited"
+		}
 		receiveRoomError(t, c, want)
 	}
 }
 
 func TestHostCannotManageAnotherRoomsMembers(t *testing.T) {
-    s, roomA, _, guestA := roomTestFixture()
-    hostB := newClient("host-B", nil)
-    hostB.accountID = "account-B"
-    s.handleCreateRoom(hostB, encodeTestPayload(t, MsgTypeCreateRoom, &CreateRoomPayload{Username: "Host B"}))
-    // Drain the creation response before checking the permission errors.
-    <-hostB.Send
-    s.handleKickUser(hostB, encodeTestPayload(t, MsgTypeKickUser, &KickUserPayload{UserID: guestA.clientID()}))
-    receiveRoomError(t, hostB, "user_not_found")
-    s.handleTransferHost(hostB, encodeTestPayload(t, MsgTypeTransferHost, &TransferHostPayload{NewHostID: guestA.clientID()}))
-    receiveRoomError(t, hostB, "user_not_found")
-    if guestA.currentRoom() != roomA || roomA.Clients[guestA.clientID()] != guestA { t.Fatal("cross-room command changed membership") }
+	s, roomA, _, guestA := roomTestFixture()
+	hostB := newClient("host-B", nil)
+	hostB.accountID = "account-B"
+	s.handleCreateRoom(hostB, encodeTestPayload(t, MsgTypeCreateRoom, &CreateRoomPayload{Username: "Host B"}))
+	// Drain the creation response before checking the permission errors.
+	<-hostB.Send
+	s.handleKickUser(hostB, encodeTestPayload(t, MsgTypeKickUser, &KickUserPayload{UserID: guestA.clientID()}))
+	receiveRoomError(t, hostB, "user_not_found")
+	s.handleTransferHost(hostB, encodeTestPayload(t, MsgTypeTransferHost, &TransferHostPayload{NewHostID: guestA.clientID()}))
+	receiveRoomError(t, hostB, "user_not_found")
+	if guestA.currentRoom() != roomA || roomA.Clients[guestA.clientID()] != guestA {
+		t.Fatal("cross-room command changed membership")
+	}
 }

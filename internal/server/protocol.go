@@ -62,7 +62,7 @@ const (
 type CreateRoomPayload struct {
 	Username string `json:"username"`
 	Password string `json:"password,omitempty"`
-	AutoJoin bool `json:"auto_join,omitempty"`
+	AutoJoin bool   `json:"auto_join,omitempty"`
 }
 
 // RoomCreatedPayload is the response for room creation

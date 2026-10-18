@@ -30,9 +30,9 @@ type PersistentState struct {
 
 // PersistentRoom is a serializable version of Room
 type PersistentRoom struct {
-	Password *roomPassword `json:"password,omitempty"`
-	AutoJoin bool `json:"auto_join"`
-	BannedAccounts map[string]bool `json:"banned_accounts,omitempty"`
+	Password           *roomPassword          `json:"password,omitempty"`
+	AutoJoin           bool                   `json:"auto_join"`
+	BannedAccounts     map[string]bool        `json:"banned_accounts,omitempty"`
 	Code               string                 `json:"code"`
 	HostID             string                 `json:"host_id"`
 	State              *RoomState             `json:"state"`
@@ -51,7 +51,7 @@ type PersistentSuggestion struct {
 
 // PersistentSession is a serializable version of Session with token
 type PersistentSession struct {
-	AccountID string `json:"account_id"`
+	AccountID    string    `json:"account_id"`
 	Token        string    `json:"token"`
 	UserID       string    `json:"user_id"`
 	Username     string    `json:"username"`
@@ -79,7 +79,7 @@ func (s *Server) SaveState() error {
 		}
 		sessions[token] = PersistentSession{
 			Token:        token,
-			AccountID: session.AccountID,
+			AccountID:    session.AccountID,
 			UserID:       session.UserID,
 			Username:     session.Username,
 			RoomCode:     session.RoomCode,
@@ -120,7 +120,7 @@ func (s *Server) SaveState() error {
 			}
 			isHost := room.State.HostID == userID
 			session := &Session{
-				AccountID: client.accountID,
+				AccountID:    client.accountID,
 				UserID:       userID,
 				Username:     client.userName(),
 				RoomCode:     room.Code,
@@ -130,8 +130,8 @@ func (s *Server) SaveState() error {
 			disconnectedUsers[userID] = session
 			sessions[token] = PersistentSession{
 				Token:        token,
-				AccountID: session.AccountID,
-			UserID:       session.UserID,
+				AccountID:    session.AccountID,
+				UserID:       session.UserID,
 				Username:     session.Username,
 				RoomCode:     session.RoomCode,
 				IsHost:       session.IsHost,
@@ -163,9 +163,9 @@ func (s *Server) SaveState() error {
 		}
 
 		persistentRoom := PersistentRoom{
-			Password: room.Password,
-			AutoJoin: room.AutoJoin,
-			BannedAccounts: room.BannedAccounts,
+			Password:           room.Password,
+			AutoJoin:           room.AutoJoin,
+			BannedAccounts:     room.BannedAccounts,
 			Code:               room.Code,
 			HostID:             hostID,
 			State:              stateCopy,
@@ -323,9 +323,9 @@ func (s *Server) LoadState() error {
 		}
 
 		room := &Room{
-			Password: persistentRoom.Password,
-			AutoJoin: persistentRoom.AutoJoin,
-			BannedAccounts: persistentRoom.BannedAccounts,
+			Password:           persistentRoom.Password,
+			AutoJoin:           persistentRoom.AutoJoin,
+			BannedAccounts:     persistentRoom.BannedAccounts,
 			Code:               persistentRoom.Code,
 			Host:               nil, // The host pointer is only set when the real client reconnects.
 			Clients:            make(map[string]*Client),
@@ -380,7 +380,7 @@ func (s *Server) LoadState() error {
 	for _, ps := range state.Sessions {
 		// Adjust disconnect time to account for shutdown duration
 		session := &Session{
-			AccountID: ps.AccountID,
+			AccountID:    ps.AccountID,
 			UserID:       ps.UserID,
 			Username:     ps.Username,
 			RoomCode:     ps.RoomCode,

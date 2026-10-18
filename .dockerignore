@@ -3,7 +3,6 @@
 .gitignore
 /metroserver
 README.md
-LICENSE
 .DS_Store
 *.swp
 *.swo
@@ -15,3 +14,10 @@ LICENSE
 **/server_state.json
 /coverage.out
 /cmd/metroserver/metroserver
+
+.env
+.env.*
+*.db
+*.db-*
+/echo-sync
+/metroproto
