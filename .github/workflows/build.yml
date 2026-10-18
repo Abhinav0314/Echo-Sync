@@ -34,3 +34,14 @@ jobs:
           go vet ./...
           go test -race -count=1 ./...
           go build ./cmd/metroserver
+      - name: Verify deployment image
+        run: |
+          docker build -t echo-sync:test .
+          docker run -d --name echo-sync-check -p 127.0.0.1:10000:10000 -e PORT=10000 -e DATABASE_FILE=/tmp/echo-sync.db -e SUPABASE_URL=https://test.invalid -e SUPABASE_ANON_KEY=public-test-key echo-sync:test
+          trap 'docker logs echo-sync-check; docker rm -f echo-sync-check' EXIT
+          for attempt in $(seq 1 15); do
+            if curl --fail --silent http://127.0.0.1:10000/health; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:10000/health
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:10000/ws)" = 401
