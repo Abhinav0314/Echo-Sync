@@ -501,7 +501,9 @@ func TestDirectSendHonoursClientTier(t *testing.T) {
 
 func TestBlockedUserAgentIsDisconnectedWithoutRoomAccess(t *testing.T) {
 	server := testServer()
-	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
+	server.authenticate = func(context.Context, string) (accountIdentity, error) {
+		return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}
 	server.uaPolicy = testUAPolicy([]string{"go-http-client"}, nil, nil, nil)
 	store, err := openDatabase(filepath.Join(t.TempDir(), "metroserver.db"))
 	if err != nil {
@@ -581,7 +583,9 @@ func TestConnectionSlotsBoundAllWebSockets(t *testing.T) {
 
 func TestAllowedUserAgentKeepsFullService(t *testing.T) {
 	server := testServer()
-	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
+	server.authenticate = func(context.Context, string) (accountIdentity, error) {
+		return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}
 	server.uaPolicy = testUAPolicy(nil, []string{"com.nestmusic"}, nil, nil)
 	httpServer := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	t.Cleanup(httpServer.Close)
@@ -627,7 +631,9 @@ func TestAllowedUserAgentKeepsFullService(t *testing.T) {
 
 func TestVerifiedAccountDoesNotDependOnUserAgentAllowlist(t *testing.T) {
 	server := testServer()
-	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
+	server.authenticate = func(context.Context, string) (accountIdentity, error) {
+		return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}
 	httpServer := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	t.Cleanup(httpServer.Close)
 

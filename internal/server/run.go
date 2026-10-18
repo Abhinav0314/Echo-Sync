@@ -23,7 +23,9 @@ func Run() {
 
 	server := NewServer(logger)
 	server.authenticate, err = configuredAuthenticator()
-	if err != nil { logger.Fatal("Echo authentication configuration is required", zap.Error(err)) }
+	if err != nil {
+		logger.Fatal("Echo authentication configuration is required", zap.Error(err))
+	}
 
 	// User-Agent policy (block / advertise Metrolist / rickroll freeloaders).
 	ua, err := loadUAPolicy(os.Getenv("UA_POLICY_FILE"))

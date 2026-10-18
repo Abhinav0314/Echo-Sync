@@ -255,12 +255,23 @@ func (s *Server) handleCreateRoom(c *Client, payload []byte) {
 		return
 	}
 
-	if !s.roomLimiter.allow("create:"+c.accountID, 5, time.Minute) { c.sendError(s.logger, "rate_limited", "Please wait before creating another room"); return }
-	select { case s.passwordSlots <- struct{}{}: default: c.sendError(s.logger, "rate_limited", "Please try again shortly"); return }
+	if !s.roomLimiter.allow("create:"+c.accountID, 5, time.Minute) {
+		c.sendError(s.logger, "rate_limited", "Please wait before creating another room")
+		return
+	}
+	select {
+	case s.passwordSlots <- struct{}{}:
+	default:
+		c.sendError(s.logger, "rate_limited", "Please try again shortly")
+		return
+	}
 	password, passwordErr := newRoomPassword(p.Password)
 	<-s.passwordSlots
 	p.Password = ""
-	if passwordErr != nil { c.sendError(s.logger, "invalid_password", "Use a password between 6 and 128 bytes"); return }
+	if passwordErr != nil {
+		c.sendError(s.logger, "invalid_password", "Use a password between 6 and 128 bytes")
+		return
+	}
 
 	// Generate unique room code with retry limit
 	var (
@@ -300,9 +311,9 @@ func (s *Server) handleCreateRoom(c *Client, payload []byte) {
 
 	room := &Room{
 		Code:              code,
-		Password: password,
-		AutoJoin: p.AutoJoin,
-		BannedAccounts: make(map[string]bool),
+		Password:          password,
+		AutoJoin:          p.AutoJoin,
+		BannedAccounts:    make(map[string]bool),
 		Host:              c,
 		Clients:           make(map[string]*Client),
 		PendingJoins:      make(map[string]*Client),
@@ -340,8 +351,17 @@ func (s *Server) handleCreateRoom(c *Client, payload []byte) {
 		return
 	}
 	ownedRooms := 0
-	for _, existing := range s.rooms { if existing.Host != nil && existing.Host.accountID == c.accountID { ownedRooms++ } }
-	if c.accountID != "" && ownedRooms >= 2 { s.mu.Unlock(); c.clearRoom(room); c.sendError(s.logger, "room_limit_reached", "You can host two rooms at a time"); return }
+	for _, existing := range s.rooms {
+		if existing.Host != nil && existing.Host.accountID == c.accountID {
+			ownedRooms++
+		}
+	}
+	if c.accountID != "" && ownedRooms >= 2 {
+		s.mu.Unlock()
+		c.clearRoom(room)
+		c.sendError(s.logger, "room_limit_reached", "You can host two rooms at a time")
+		return
+	}
 	s.rooms[code] = room
 	s.mu.Unlock()
 
@@ -401,7 +421,10 @@ func (s *Server) handleJoinRoom(c *Client, payload []byte) {
 		return
 	}
 
-	if !s.roomLimiter.allow("join:"+c.accountID, 15, 10*time.Minute) { c.sendError(s.logger, "rate_limited", "Please wait before trying another code or password"); return }
+	if !s.roomLimiter.allow("join:"+c.accountID, 15, 10*time.Minute) {
+		c.sendError(s.logger, "rate_limited", "Please wait before trying another code or password")
+		return
+	}
 	s.mu.RLock()
 	room, exists := s.rooms[p.RoomCode]
 	if !exists || room == nil {
@@ -415,17 +438,35 @@ func (s *Server) handleJoinRoom(c *Client, payload []byte) {
 	banned := room.BannedAccounts[c.accountID]
 	room.mu.RUnlock()
 	s.mu.RUnlock()
-	if banned { c.sendError(s.logger, "join_rejected", "You cannot join this room"); return }
+	if banned {
+		c.sendError(s.logger, "join_rejected", "You cannot join this room")
+		return
+	}
 	if password != nil {
-		if p.Password == "" { c.sendError(s.logger, "password_required", "Enter the room password"); return }
-		select { case s.passwordSlots <- struct{}{}: default: c.sendError(s.logger, "rate_limited", "Please try again shortly"); return }
+		if p.Password == "" {
+			c.sendError(s.logger, "password_required", "Enter the room password")
+			return
+		}
+		select {
+		case s.passwordSlots <- struct{}{}:
+		default:
+			c.sendError(s.logger, "rate_limited", "Please try again shortly")
+			return
+		}
 		valid := password.matches(p.Password)
 		<-s.passwordSlots
 		p.Password = ""
-		if !valid { c.sendError(s.logger, "password_incorrect", "Check the room password"); return }
+		if !valid {
+			c.sendError(s.logger, "password_incorrect", "Check the room password")
+			return
+		}
 	}
 	s.mu.RLock()
-	if s.rooms[p.RoomCode] != room { s.mu.RUnlock(); c.sendError(s.logger, "room_not_found", "Room not found"); return }
+	if s.rooms[p.RoomCode] != room {
+		s.mu.RUnlock()
+		c.sendError(s.logger, "room_not_found", "Room not found")
+		return
+	}
 	c.setUsername(p.Username)
 	clientID := c.clientID()
 	username := c.userName()
@@ -481,7 +522,13 @@ func (s *Server) handleJoinRoom(c *Client, payload []byte) {
 
 	if room.AutoJoin && hostConnected {
 		encoded, err := NewMessageCodec(false).Encode(MsgTypeApproveJoin, &ApproveJoinPayload{UserID: clientID})
-		if err == nil { _, approval, err := NewMessageCodec(false).Decode(encoded); if err == nil { s.handleApproveJoin(host, approval); return } }
+		if err == nil {
+			_, approval, err := NewMessageCodec(false).Decode(encoded)
+			if err == nil {
+				s.handleApproveJoin(host, approval)
+				return
+			}
+		}
 	}
 
 	// Notify host of join request if host is currently connected.
@@ -707,7 +754,9 @@ func (s *Server) handleKickUser(c *Client, payload []byte) {
 	}
 
 	if targetClient.accountID != "" {
-		if room.BannedAccounts == nil { room.BannedAccounts = make(map[string]bool) }
+		if room.BannedAccounts == nil {
+			room.BannedAccounts = make(map[string]bool)
+		}
 		room.BannedAccounts[targetClient.accountID] = true
 	}
 	// Remove from room

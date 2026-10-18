@@ -4,8 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	mathrand "math/rand"
 	"math/big"
+	mathrand "math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -15,7 +15,7 @@ import (
 )
 
 type Session struct {
-	AccountID string
+	AccountID    string
 	UserID       string
 	Username     string
 	RoomCode     string
@@ -24,9 +24,9 @@ type Session struct {
 }
 
 type Room struct {
-	Password *roomPassword
-	AutoJoin bool
-	BannedAccounts map[string]bool
+	Password           *roomPassword
+	AutoJoin           bool
+	BannedAccounts     map[string]bool
 	Code               string
 	Host               *Client
 	Clients            map[string]*Client
@@ -52,11 +52,11 @@ type Suggestion struct {
 
 // Server is the main WebSocket server
 type Server struct {
-	authenticate authenticateAccount
-	authSlots chan struct{}
-	passwordSlots chan struct{}
-	authLimiter requestLimiter
-	roomLimiter requestLimiter
+	authenticate    authenticateAccount
+	authSlots       chan struct{}
+	passwordSlots   chan struct{}
+	authLimiter     requestLimiter
+	roomLimiter     requestLimiter
 	rooms           map[string]*Room
 	sessions        map[string]*Session // sessionToken -> Session
 	clients         map[*Client]bool
@@ -110,11 +110,11 @@ const (
 
 func NewServer(logger *zap.Logger) *Server {
 	s := &Server{
-		authSlots: make(chan struct{}, 16),
+		authSlots:     make(chan struct{}, 16),
 		passwordSlots: make(chan struct{}, 2),
-		rooms:    make(map[string]*Room),
-		sessions: make(map[string]*Session),
-		clients:  make(map[*Client]bool),
+		rooms:         make(map[string]*Room),
+		sessions:      make(map[string]*Session),
+		clients:       make(map[*Client]bool),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				origin := r.Header.Get("Origin")
@@ -142,7 +142,9 @@ func (s *Server) generateRoomCode() string {
 	code := make([]byte, 8)
 	for i := range code {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
-		if err != nil { panic("secure random source unavailable") }
+		if err != nil {
+			panic("secure random source unavailable")
+		}
 		code[i] = chars[n.Int64()]
 	}
 	return string(code)
@@ -203,7 +205,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	identity, token, authorized := s.authorizeUpgrade(w, r)
-	if !authorized { return }
+	if !authorized {
+		return
+	}
 
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -221,7 +225,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err := s.database.recordUserAgent(userAgent); err != nil {
 		s.logger.Warn("Failed to record User-Agent", zap.Error(err))
 	}
-	if tier != uaBlock { tier = uaAllow }
+	if tier != uaBlock {
+		tier = uaAllow
+	}
 	client.uaTier = tier
 	client.policy = s.uaPolicy
 	if tier == uaBlock {
@@ -245,8 +251,16 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accountConnections := 0
-	for other := range s.clients { if other.accountID == identity.ID { accountConnections++ } }
-	if accountConnections >= 4 { s.mu.Unlock(); _ = conn.Close(); return }
+	for other := range s.clients {
+		if other.accountID == identity.ID {
+			accountConnections++
+		}
+	}
+	if accountConnections >= 4 {
+		s.mu.Unlock()
+		_ = conn.Close()
+		return
+	}
 	s.clients[client] = true
 	s.mu.Unlock()
 
@@ -260,7 +274,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMessage(c *Client, data []byte) {
-	if s.authenticate != nil && (c.accountID == "" || !c.authExpiresAt.After(time.Now())) { c.sendError(s.logger, "auth_required", "Sign in to Echo again"); return }
+	if s.authenticate != nil && (c.accountID == "" || !c.authExpiresAt.After(time.Now())) {
+		c.sendError(s.logger, "auth_required", "Sign in to Echo again")
+		return
+	}
 	// Decode message using protobuf codec
 	msgType, payloadBytes, err := c.codec.Decode(data)
 	if err != nil {
@@ -274,13 +291,13 @@ func (s *Server) handleMessage(c *Client, data []byte) {
 		return
 	}
 
-    // Bound decoded traffic as well as frame size/message count. Compressed
-    // payloads cannot bypass an account budget by switching sockets.
-    cost := len(payloadBytes) + len(data) + 128
-    if !s.roomLimiter.allowCost("traffic:"+c.accountID, cost, 4*1024*1024, 10*time.Second) || !s.roomLimiter.allowCost("traffic-global", cost, 32*1024*1024, 10*time.Second) {
-        c.sendError(s.logger, "rate_limited", "Too much room traffic. Please wait.")
-        return
-    }
+	// Bound decoded traffic as well as frame size/message count. Compressed
+	// payloads cannot bypass an account budget by switching sockets.
+	cost := len(payloadBytes) + len(data) + 128
+	if !s.roomLimiter.allowCost("traffic:"+c.accountID, cost, 4*1024*1024, 10*time.Second) || !s.roomLimiter.allowCost("traffic-global", cost, 32*1024*1024, 10*time.Second) {
+		c.sendError(s.logger, "rate_limited", "Too much room traffic. Please wait.")
+		return
+	}
 
 	s.logger.Debug("Message received", zap.String("client_id", c.clientID()), zap.String("message_type", msgType), zap.String("format", "protobuf"))
 

@@ -6,3 +6,8 @@ metroserver.db*
 coverage.out
 
 /metroproto/
+
+/echo-sync
+.env
+.env.*
+!.env.example

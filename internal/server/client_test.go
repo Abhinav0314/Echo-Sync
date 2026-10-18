@@ -22,7 +22,9 @@ func TestWebSocketHeartbeatHasPongBudget(t *testing.T) {
 
 func TestWebSocketPumpsRoundTripAndRemoveClient(t *testing.T) {
 	server := testServer()
-	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
+	server.authenticate = func(context.Context, string) (accountIdentity, error) {
+		return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}
 	httpServer := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	t.Cleanup(httpServer.Close)
 
