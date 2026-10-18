@@ -184,8 +184,6 @@ func (s *Server) releaseConnectionSlot() {
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	identity, token, authorized := s.authorizeUpgrade(w, r)
-	if !authorized { return }
 	s.mu.RLock()
 	clientCount := len(s.clients)
 	s.mu.RUnlock()
@@ -204,6 +202,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	identity, token, authorized := s.authorizeUpgrade(w, r)
+	if !authorized { return }
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Warn("WebSocket upgrade error", zap.Error(err))
@@ -220,7 +221,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err := s.database.recordUserAgent(userAgent); err != nil {
 		s.logger.Warn("Failed to record User-Agent", zap.Error(err))
 	}
-	tier = uaAllow
+	if tier != uaBlock { tier = uaAllow }
 	client.uaTier = tier
 	client.policy = s.uaPolicy
 	if tier == uaBlock {

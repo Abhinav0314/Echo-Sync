@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -500,6 +501,7 @@ func TestDirectSendHonoursClientTier(t *testing.T) {
 
 func TestBlockedUserAgentIsDisconnectedWithoutRoomAccess(t *testing.T) {
 	server := testServer()
+	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
 	server.uaPolicy = testUAPolicy([]string{"go-http-client"}, nil, nil, nil)
 	store, err := openDatabase(filepath.Join(t.TempDir(), "metroserver.db"))
 	if err != nil {
@@ -579,6 +581,7 @@ func TestConnectionSlotsBoundAllWebSockets(t *testing.T) {
 
 func TestAllowedUserAgentKeepsFullService(t *testing.T) {
 	server := testServer()
+	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
 	server.uaPolicy = testUAPolicy(nil, []string{"com.nestmusic"}, nil, nil)
 	httpServer := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	t.Cleanup(httpServer.Close)
@@ -622,8 +625,9 @@ func TestAllowedUserAgentKeepsFullService(t *testing.T) {
 	}
 }
 
-func TestDialledUnknownUserAgentIsAdvertised(t *testing.T) {
+func TestVerifiedAccountDoesNotDependOnUserAgentAllowlist(t *testing.T) {
 	server := testServer()
+	server.authenticate = func(context.Context, string) (accountIdentity, error) { return accountIdentity{ID: "test-account", ExpiresAt: time.Now().Add(time.Hour)}, nil }
 	httpServer := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	t.Cleanup(httpServer.Close)
 
@@ -649,8 +653,8 @@ func TestDialledUnknownUserAgentIsAdvertised(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if got := client.uaTier; got != uaAdvert {
-		t.Fatalf("tier = %v, want advert", got)
+	if got := client.uaTier; got != uaAllow {
+		t.Fatalf("verified account tier = %v, want allow", got)
 	}
 	if client.policy.advertTitle != DefaultAdvertTitle {
 		t.Fatalf("advert title = %q", client.policy.advertTitle)
@@ -660,6 +664,7 @@ func TestDialledUnknownUserAgentIsAdvertised(t *testing.T) {
 func dialTestWebSocket(url, userAgent string) (*websocket.Conn, error) {
 	header := http.Header{}
 	header.Set("User-Agent", userAgent)
+	header.Set("Authorization", "Bearer test-token")
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(url, "http"), header)
 	return conn, err
 }
