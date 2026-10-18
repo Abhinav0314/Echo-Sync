@@ -6,12 +6,12 @@ set -e
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-PROTO_DIR="./metroproto"
+PROTO_DIR="./protocol"
 OUT_DIR="./proto"
 
 if [ ! -f "$PROTO_DIR/listentogether.proto" ]; then
     echo "Missing proto file at $PROTO_DIR/listentogether.proto"
-    echo "Did you initialize submodules? Try: git submodule update --init --recursive"
+    echo "The vendored Echo schema is required."
     exit 1
 fi
 
