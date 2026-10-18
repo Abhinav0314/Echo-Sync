@@ -41,6 +41,7 @@ WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /build/echo-sync .
+COPY LICENSE /app/LICENSE
 
 # Change ownership to non-root user
 RUN mkdir /app/data && chown -R echo:echo /app
