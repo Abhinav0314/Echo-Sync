@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 type accountIdentity struct {
@@ -162,7 +163,7 @@ func newRoomPassword(password string) (*roomPassword, error) {
 	if password == "" {
 		return nil, nil
 	}
-	if len(password) < 6 || len(password) > 128 {
+	if utf8.RuneCountInString(password) < 6 || len(password) > 128 {
 		return nil, errors.New("use a password between 6 and 128 bytes")
 	}
 	salt := make([]byte, 16)
