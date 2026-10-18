@@ -118,3 +118,17 @@ func TestAccountJoinBudgetSurvivesChangingConnections(t *testing.T) {
 		receiveRoomError(t, c, want)
 	}
 }
+
+func TestHostCannotManageAnotherRoomsMembers(t *testing.T) {
+    s, roomA, _, guestA := roomTestFixture()
+    hostB := newClient("host-B", nil)
+    hostB.accountID = "account-B"
+    s.handleCreateRoom(hostB, encodeTestPayload(t, MsgTypeCreateRoom, &CreateRoomPayload{Username: "Host B"}))
+    // Drain the creation response before checking the permission errors.
+    <-hostB.Send
+    s.handleKickUser(hostB, encodeTestPayload(t, MsgTypeKickUser, &KickUserPayload{UserID: guestA.clientID()}))
+    receiveRoomError(t, hostB, "user_not_found")
+    s.handleTransferHost(hostB, encodeTestPayload(t, MsgTypeTransferHost, &TransferHostPayload{NewHostID: guestA.clientID()}))
+    receiveRoomError(t, hostB, "user_not_found")
+    if guestA.currentRoom() != roomA || roomA.Clients[guestA.clientID()] != guestA { t.Fatal("cross-room command changed membership") }
+}

@@ -1,5 +1,5 @@
 # Multi-stage build for minimal image size
-FROM golang:1.25.6-alpine AS builder
+FROM golang:1.27.2-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git protobuf-dev bash
@@ -20,33 +20,33 @@ ENV PATH="/root/go/bin:${PATH}"
 # Copy source code
 COPY . .
 
-# Generate protobuf files from submodule
+# Generate protobuf files from the vendored Echo schema
 RUN bash scripts/generate_proto.sh
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o metroserver -ldflags="-w -s" ./cmd/metroserver
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o echo-sync -ldflags="-w -s" ./cmd/metroserver
 
 # Final stage - minimal runtime image
-FROM alpine:3.20
+FROM alpine:3.24
 
 # Install runtime dependencies (curl for health checks)
 RUN apk add --no-cache ca-certificates
 
 # Create non-root user for security
-RUN addgroup -g 1000 metrolist && \
-    adduser -D -u 1000 -G metrolist metrolist
+RUN addgroup -g 1000 echo && \
+    adduser -D -u 1000 -G echo echo
 
 # Set working directory
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /build/metroserver .
+COPY --from=builder /build/echo-sync .
 
 # Change ownership to non-root user
-RUN mkdir /app/data && chown -R metrolist:metrolist /app
+RUN mkdir /app/data && chown -R echo:echo /app
 
 # Switch to non-root user
-USER metrolist
+USER echo
 
 # Expose port (default 8080, can be overridden)
 EXPOSE 8080
@@ -57,4 +57,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Run the application
 # PORT can be overridden at runtime using -e PORT=<port>
-CMD ["./metroserver"]
+CMD ["./echo-sync"]

@@ -36,7 +36,7 @@ Use one server instance. Room state is local; multiple replicas need a shared st
 
 ## Development
 
-Go 1.25.6+, `protoc`, and `protoc-gen-go` 1.36.11:
+Go 1.27.2+, `protoc`, and `protoc-gen-go` 1.36.11:
 
 ```sh
 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
