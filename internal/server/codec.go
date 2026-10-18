@@ -159,9 +159,9 @@ func toProtoMessage(payload interface{}) (proto.Message, error) {
 	switch p := payload.(type) {
 	// Pointer types (from pending actions)
 	case *CreateRoomPayload:
-		return &pb.CreateRoomPayload{Username: p.Username}, nil
+		return &pb.CreateRoomPayload{Username: p.Username, Password: p.Password, AutoJoin: p.AutoJoin}, nil
 	case *JoinRoomPayload:
-		return &pb.JoinRoomPayload{RoomCode: p.RoomCode, Username: p.Username}, nil
+		return &pb.JoinRoomPayload{RoomCode: p.RoomCode, Username: p.Username, Password: p.Password}, nil
 	case *ApproveJoinPayload:
 		return &pb.ApproveJoinPayload{UserId: p.UserID}, nil
 	case *RejectJoinPayload:
@@ -426,13 +426,13 @@ func fromProtoMessage(msgType string, data []byte) (interface{}, error) {
 		if err := proto.Unmarshal(data, &pbb); err != nil {
 			return nil, err
 		}
-		return &CreateRoomPayload{Username: pbb.Username}, nil
+		return &CreateRoomPayload{Username: pbb.Username, Password: pbb.Password, AutoJoin: pbb.AutoJoin}, nil
 	case MsgTypeJoinRoom:
 		var pbb pb.JoinRoomPayload
 		if err := proto.Unmarshal(data, &pbb); err != nil {
 			return nil, err
 		}
-		return &JoinRoomPayload{RoomCode: pbb.RoomCode, Username: pbb.Username}, nil
+		return &JoinRoomPayload{RoomCode: pbb.RoomCode, Username: pbb.Username, Password: pbb.Password}, nil
 	case MsgTypeApproveJoin:
 		var pbb pb.ApproveJoinPayload
 		if err := proto.Unmarshal(data, &pbb); err != nil {
