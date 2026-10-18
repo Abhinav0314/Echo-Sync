@@ -274,6 +274,14 @@ func (s *Server) handleMessage(c *Client, data []byte) {
 		return
 	}
 
+    // Bound decoded traffic as well as frame size/message count. Compressed
+    // payloads cannot bypass an account budget by switching sockets.
+    cost := len(payloadBytes) + len(data) + 128
+    if !s.roomLimiter.allowCost("traffic:"+c.accountID, cost, 4*1024*1024, 10*time.Second) || !s.roomLimiter.allowCost("traffic-global", cost, 32*1024*1024, 10*time.Second) {
+        c.sendError(s.logger, "rate_limited", "Too much room traffic. Please wait.")
+        return
+    }
+
 	s.logger.Debug("Message received", zap.String("client_id", c.clientID()), zap.String("message_type", msgType), zap.String("format", "protobuf"))
 
 	switch msgType {

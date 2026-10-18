@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: echo-sync
+    runtime: docker
+    plan: free
+    branch: master
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DATABASE_FILE
+        value: /tmp/echo-sync.db
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false

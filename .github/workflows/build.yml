@@ -15,9 +15,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Generate protocol
@@ -30,6 +30,7 @@ jobs:
       - name: Validate and build
         run: |
           gofmt -w internal/server
+          echo "ECHO_FORMAT_PATCH:$(git diff --binary -- internal/server | base64 -w0)"
           go vet ./...
           go test -race -count=1 ./...
           go build ./cmd/metroserver

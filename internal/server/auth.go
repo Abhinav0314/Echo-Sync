@@ -79,6 +79,10 @@ type requestLimiter struct { mu sync.Mutex; windows map[string]rateWindow }
 // Bounded and shared by all sockets: reconnecting does not reset an account's
 // join/password budget. Unknown keys are denied at capacity rather than evicted.
 func (l *requestLimiter) allow(key string, limit int, window time.Duration) bool {
+    return l.allowCost(key, 1, limit, window)
+}
+
+func (l *requestLimiter) allowCost(key string, cost, limit int, window time.Duration) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
@@ -89,8 +93,8 @@ func (l *requestLimiter) allow(key string, limit int, window time.Duration) bool
 	}
 	v := l.windows[key]
 	if now.Sub(v.start) >= window { v = rateWindow{start: now} }
-	if v.count >= limit { return false }
-	v.count++
+	if cost < 1 || cost > limit || v.count > limit-cost { return false }
+	v.count += cost
 	l.windows[key] = v
 	return true
 }
@@ -117,7 +121,7 @@ func (p *roomPassword) matches(password string) bool {
 
 func (s *Server) authorizeUpgrade(w http.ResponseWriter, r *http.Request) (accountIdentity, string, bool) {
 	if s.authenticate == nil { http.Error(w, "authentication is not configured", http.StatusServiceUnavailable); return accountIdentity{}, "", false }
-	if !s.authLimiter.allow("global", 60, time.Second) { http.Error(w, "try again shortly", http.StatusTooManyRequests); return accountIdentity{}, "", false }
+	if !s.authLimiter.allow("global", 30, time.Minute) { http.Error(w, "try again shortly", http.StatusTooManyRequests); return accountIdentity{}, "", false }
 	select { case s.authSlots <- struct{}{}: default: http.Error(w, "try again shortly", http.StatusServiceUnavailable); return accountIdentity{}, "", false }
 	defer func() { <-s.authSlots }()
 	authorization := r.Header.Get("Authorization")
