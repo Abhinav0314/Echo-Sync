@@ -38,6 +38,47 @@ func roomTestFixture() (*Server, *Room, *Client, *Client) {
 	return server, room, host, guest
 }
 
+func TestHostCanRemoveDisconnectedListenerAndRevokeResume(t *testing.T) {
+	server, room, host, guest := roomTestFixture()
+	guest.accountID = "guest-account"
+	guest.setSessionToken("guest-token")
+	server.handleClientDisconnect(guest)
+	receiveTestMessage(t, host, &pb.UserDisconnectedPayload{})
+	server.handleKickUser(host, encodeTestPayload(t, MsgTypeKickUser, &KickUserPayload{UserID: "guest"}))
+	var left pb.UserLeftPayload
+	if got := receiveTestMessage(t, host, &left); got != MsgTypeUserLeft || left.UserId != "guest" {
+		t.Fatalf("removal notification = %s, user = %q", got, left.UserId)
+	}
+	if room.DisconnectedUsers["guest"] != nil || server.sessions["guest-token"] != nil || !room.BannedAccounts["guest-account"] {
+		t.Fatal("removed listener retained room access or a resumable session")
+	}
+	if len(room.State.Users) != 1 || room.State.Users[0].UserID != "host" {
+		t.Fatal("removed listener remained in the room member list")
+	}
+	resuming := newClient("new-connection", nil)
+	resuming.accountID = "guest-account"
+	server.handleReconnect(resuming, encodeTestPayload(t, MsgTypeReconnect, &ReconnectPayload{SessionToken: "guest-token"}))
+	receiveRoomError(t, resuming, "session_not_found")
+}
+
+func TestOtherRoomHostCannotRemoveDisconnectedListener(t *testing.T) {
+	server, room, host, guest := roomTestFixture()
+	guest.accountID = "guest-account"
+	guest.setSessionToken("guest-token")
+	server.handleClientDisconnect(guest)
+	receiveTestMessage(t, host, &pb.UserDisconnectedPayload{})
+	otherHost := newClient("other-host", nil)
+	other := &Room{Code: "OTHER123", Host: otherHost, Clients: map[string]*Client{"other-host": otherHost},
+		DisconnectedUsers: make(map[string]*Session), State: &RoomState{RoomCode: "OTHER123"}}
+	otherHost.setRoom(other)
+	server.rooms[other.Code] = other
+	server.handleKickUser(otherHost, encodeTestPayload(t, MsgTypeKickUser, &KickUserPayload{UserID: "guest"}))
+	receiveRoomError(t, otherHost, "user_not_found")
+	if room.DisconnectedUsers["guest"] == nil || server.sessions["guest-token"] == nil || room.BannedAccounts["guest-account"] {
+		t.Fatal("another room's moderation changed the listener's room or session")
+	}
+}
+
 func receiveRoomError(t *testing.T, client *Client, want string) {
 	t.Helper()
 	var response pb.ErrorPayload

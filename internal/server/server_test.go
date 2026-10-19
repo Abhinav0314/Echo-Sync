@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -159,7 +160,8 @@ func TestSaveStateIncludesActiveSessionsAndLoadHasNoPlaceholderHost(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Windows reports synthetic permission bits; Linux CI verifies the production 0600 mode.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("database permissions = %v, want 0600", info.Mode().Perm())
 	}
 

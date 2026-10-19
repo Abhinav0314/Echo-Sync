@@ -726,39 +726,52 @@ func (s *Server) handleKickUser(c *Client, payload []byte) {
 	}
 
 	clientID := c.clientID()
+	// Match reconnect/disconnect lock order while revoking saved sessions.
+	s.mu.Lock()
 	room.mu.Lock()
 
 	if room.Host == nil || room.Host != c || room.HostDisconnectedAt != nil {
 		room.mu.Unlock()
+		s.mu.Unlock()
 		c.sendError(s.logger, "not_host", "Only the host can kick users")
 		return
 	}
 
 	if p.UserID == clientID {
 		room.mu.Unlock()
+		s.mu.Unlock()
 		c.sendError(s.logger, "cannot_kick_self", "You cannot kick yourself")
 		return
 	}
 
-	targetClient, exists := room.Clients[p.UserID]
-	if !exists {
+	targetClient := room.Clients[p.UserID]
+	disconnected := room.DisconnectedUsers[p.UserID]
+	if targetClient == nil && disconnected == nil {
 		room.mu.Unlock()
+		s.mu.Unlock()
 		c.sendError(s.logger, "user_not_found", "User not found in room")
 		return
 	}
 
-	if targetClient == nil {
-		room.mu.Unlock()
-		c.sendError(s.logger, "user_not_found", "User not found in room")
-		return
+	var accountID, kickedUsername string
+	if targetClient != nil {
+		accountID, kickedUsername = targetClient.accountID, targetClient.userName()
+	} else {
+		accountID, kickedUsername = disconnected.AccountID, disconnected.Username
 	}
-
-	if targetClient.accountID != "" {
+	if accountID != "" {
 		if room.BannedAccounts == nil {
 			room.BannedAccounts = make(map[string]bool)
 		}
-		room.BannedAccounts[targetClient.accountID] = true
+		room.BannedAccounts[accountID] = true
 	}
+	delete(room.DisconnectedUsers, p.UserID)
+	for token, session := range s.sessions {
+		if session != nil && session.RoomCode == room.Code && session.UserID == p.UserID {
+			delete(s.sessions, token)
+		}
+	}
+
 	// Remove from room
 	delete(room.Clients, p.UserID)
 	delete(room.BufferingUsers, p.UserID)
@@ -772,8 +785,9 @@ func (s *Server) handleKickUser(c *Client, payload []byte) {
 	}
 	room.State.Users = newUsers
 
-	kickedUsername := targetClient.userName()
-	targetClient.clearRoom(room)
+	if targetClient != nil {
+		targetClient.clearRoom(room)
+	}
 
 	// Collect clients to notify before unlocking
 	clientsToNotify := make([]*Client, 0, len(room.Clients))
@@ -784,6 +798,7 @@ func (s *Server) handleKickUser(c *Client, payload []byte) {
 	}
 
 	room.mu.Unlock()
+	s.mu.Unlock()
 
 	// Notify the kicked user
 	reason := sanitizeString(p.Reason, 200)
@@ -791,9 +806,9 @@ func (s *Server) handleKickUser(c *Client, payload []byte) {
 		reason = "You have been kicked from the room"
 	}
 
-	targetClient.sendMessage(s.logger, MsgTypeKicked, KickedPayload{
-		Reason: reason,
-	})
+	if targetClient != nil {
+		targetClient.sendMessage(s.logger, MsgTypeKicked, KickedPayload{Reason: reason})
+	}
 
 	// Notify other users
 	for _, client := range clientsToNotify {
